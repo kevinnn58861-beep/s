@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Cosmic Hand Master</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: sans-serif; }
+        #video_container { position: absolute; bottom: 10px; right: 10px; width: 180px; height: 135px; border: 2px solid rgba(255,255,255,0.2); border-radius: 8px; overflow: hidden; transform: scaleX(-1); z-index: 10; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #ui { position: absolute; top: 10px; left: 10px; text-align: left; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; pointer-events: none; z-index: 10; }
+        .key { display: inline-block; padding: 3px 6px; background: #333; border-radius: 4px; margin-right: 5px; color: #0f0; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h3>Controls</h3>
+    <p><span class="key">Fist</span> Saturn (Gold)</p>
+    <p><span class="key">1 Finger</span> Eiffel (White)</p>
+    <p><span class="key">2 Fingers</span> Earth (Blue/Green)</p>
+    <p><span class="key">3 Fingers</span> Xmas Tree (Green/Red)</p>
+    <p><span class="key">Thumb+Pinky</span> ZOOM</p>
+</div>
+
+<div id="video_container">
+    <video id="input_video"></video>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+<script>
+// --- 1. SCENE & RENDERER SETUP WITH BLOOM ---
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.z = 15;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ReinhardToneMapping;
+document.body.appendChild(renderer.domElement);
+
+// Post-Processing Setup (The "Cool" Part)
+const renderScene = new THREE.RenderPass(scene, camera);
+// params: resolution, strength, radius, threshold
+const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.1);
+
+const composer = new THREE.EffectComposer(renderer);
+composer.addPass(renderScene);
+composer.addPass(bloomPass);
+
+// --- 2. PARTICLE SYSTEM CONFIG ---
+const particleCount = 50000;
+const geometry = new THREE.BufferGeometry();
+const positions = new Float32Array(particleCount * 3);
+const colors = new Float32Array(particleCount * 3);
+const sizes = new Float32Array(particleCount);
+
+const shapes = { saturn: new Float32Array(particleCount * 3), eiffel: new Float32Array(particleCount * 3), earth: new Float32Array(particleCount * 3), earthCol: new Float32Array(particleCount * 3), xmas: new Float32Array(particleCount * 3), xmasCol: new Float32Array(particleCount * 3) };
+
+let currentTarget = shapes.saturn;
+let currentTargetCol = null;
+let targetBaseColor = new THREE.Color(0xffd700);
+let morphSpeed = 0.08;
+
+// --- 3. SHAPE GENERATORS ---
+for (let i = 0; i < particleCount; i++) {
+    const idx = i * 3;
+    sizes[i] = Math.random() * 0.03 + 0.01; // Particle size variation
+
+    // SATURN
+    if (i < particleCount * 0.45) {
+        const phi = Math.acos(-1 + (2 * i) / (particleCount * 0.45));
+        const theta = Math.sqrt(particleCount * 0.45 * Math.PI) * phi;
+        shapes.saturn[idx] = 2.5 * Math.cos(theta) * Math.sin(phi);
+        shapes.saturn[idx+1] = 2.5 * Math.sin(theta) * Math.sin(phi);
+        shapes.saturn[idx+2] = 2.5 * Math.cos(phi);
+    } else {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 3.8 + Math.random() * 2.5;
+        shapes.saturn[idx] = Math.cos(angle) * dist;
+        shapes.saturn[idx+1] = (Math.random() - 0.5) * 0.2;
+        shapes.saturn[idx+2] = Math.sin(angle) * dist;
+    }
+
+    // EIFFEL
+    const hE = 12; const ey = (Math.random() * hE) - hE/2; const normYE = (ey + hE/2) / hE; const wE = 3.5 * Math.pow(1 - normYE, 2) + 0.15;
+    shapes.eiffel[idx] = (Math.random() - 0.5) * wE; shapes.eiffel[idx+1] = ey; shapes.eiffel[idx+2] = (Math.random() - 0.5) * wE;
+
+    // EARTH
+    const phiB = Math.acos(-1 + (2 * i) / particleCount); const thetaB = Math.sqrt(particleCount * Math.PI) * phiB; const rB = 4.0;
+    shapes.earth[idx] = rB * Math.cos(thetaB) * Math.sin(phiB); shapes.earth[idx+1] = rB * Math.sin(thetaB) * Math.sin(phiB); shapes.earth[idx+2] = rB * Math.cos(phiB);
+    const noiseB = Math.sin(thetaB * 5) * Math.cos(phiB * 5); const cB = new THREE.Color(noiseB > 0.1 ? 0x228b22 : 0x1111ff);
+    shapes.earthCol[idx] = cB.r; shapes.earthCol[idx+1] = cB.g; shapes.earthCol[idx+2] = cB.b;
+
+    // XMAS TREE
+    const hX = 10; const yX = (Math.random() * hX) - hX/2; const normYX = (yX + hX/2) / hX; let rX, cX;
+    if (normYX < 0.15) { rX = 0.5; cX = new THREE.Color(0x4b2d0b); }
+    else { rX = (1.1 - normYX) * 4; cX = Math.random() > 0.98 ? new THREE.Color(0xff0000) : new THREE.Color(0x00ff00); }
+    shapes.xmas[idx] = (Math.random() - 0.5) * rX; shapes.xmas[idx+1] = yX; shapes.xmas[idx+2] = (Math.random() - 0.5) * rX;
+    shapes.xmasCol[idx] = cX.r; shapes.xmasCol[idx+1] = cX.g; shapes.xmasCol[idx+2] = cX.b;
+
+    // Init
+    positions[idx] = shapes.saturn[idx]; positions[idx+1] = shapes.saturn[idx+1]; positions[idx+2] = shapes.saturn[idx+2];
+    colors[idx] = 1; colors[idx+1] = 0.8; colors[idx+2] = 0;
+}
+
+geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+// Use a custom ShaderMaterial for better glow control
+const material = new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 }, baseColor: { value: new THREE.Color(0xffffff) }, useVertexColor: { value: 1.0 } },
+    vertexShader: `
+        varying vec3 vColor;
+        varying float vOpacity;
+        uniform float time;
+        void main() {
+            vColor = color;
+            // Add subtle pulsing effect
+            float pulse = sin(time * 2.0 + position.x * 0.5) * 0.1 + 0.9;
+            vOpacity = pulse;
+            vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+            gl_Position = projectionMatrix * mvPosition;
+            // Size attenuation (closer particles are bigger)
+            gl_PointSize = (15.0 / -mvPosition.z) * pulse;
+        }
+    `,
+    fragmentShader: `
+        varying vec3 vColor;
+        varying float vOpacity;
+        void main() {
+            // Make particles round
+            if (length(gl_PointCoord - vec2(0.5, 0.5)) > 0.5) discard;
+            gl_FragColor = vec4(vColor, vOpacity);
+        }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    vertexColors: true
+});
+
+const points = new THREE.Points(geometry, material);
+scene.add(points);
+
+// --- 4. MEDIA PIPE HANDS TRACKING ---
+const videoElement = document.getElementById('input_video');
+const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
+
+hands.onResults((res) => {
+    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+        const pts = res.multiHandLandmarks[0];
+        // Smooth movement following palm (Landmark 9)
+        points.position.x = THREE.MathUtils.lerp(points.position.x, (pts[9].x - 0.5) * -35, 0.1);
+        points.position.y = THREE.MathUtils.lerp(points.position.y, (pts[9].y - 0.5) * -25, 0.1);
+
+        // Gesture Detection
+        const indexUp = pts[8].y < pts[6].y - 0.05;
+        const middleUp = pts[12].y < pts[10].y - 0.05;
+        const ringUp = pts[16].y < pts[14].y - 0.05;
+
+        if (indexUp && middleUp && ringUp) { // 3 FINGERS
+            currentTarget = shapes.xmas; currentTargetCol = shapes.xmasCol; morphSpeed = 0.1; bloomPass.strength = 2.0;
+        } else if (indexUp && middleUp) { // 2 FINGERS
+            currentTarget = shapes.earth; currentTargetCol = shapes.earthCol; morphSpeed = 0.1; bloomPass.strength = 1.2;
+        } else if (indexUp) { // 1 FINGER
+            currentTarget = shapes.eiffel; currentTargetCol = null; targetBaseColor.setHex(0xffffff); morphSpeed = 0.08; bloomPass.strength = 1.5;
+        } else { // FIST/DEFAULT
+            currentTarget = shapes.saturn; currentTargetCol = null; targetBaseColor.setHex(0xffd700); morphSpeed = 0.08; bloomPass.strength = 1.5;
+        }
+
+        // ZOOM Logic (Thumb [4] to Pinky [20])
+        const zDist = Math.hypot(pts[4].x - pts[20].x, pts[4].y - pts[20].y);
+        points.scale.lerp(new THREE.Vector3().setScalar(zDist < 0.1 ? 2.8 : 1.0), 0.1);
+    }
+});
+
+const cameraUtils = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 640, height: 480 });
+cameraUtils.start();
+
+// --- 5. ANIMATION & MORPH LOOP ---
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const delta = clock.getDelta();
+    const elapsedTime = clock.getElapsedTime();
+    material.uniforms.time.value = elapsedTime;
+
+    const pos = geometry.attributes.position;
+    const col = geometry.attributes.color;
+    
+    // Perform Morphing
+    for (let i = 0; i < particleCount; i++) {
+        const idx = i * 3;
+        // Position Morph
+        pos.array[idx] += (currentTarget[idx] - pos.array[idx]) * morphSpeed;
+        pos.array[idx+1] += (currentTarget[idx+1] - pos.array[idx+1]) * morphSpeed;
+        pos.array[idx+2] += (currentTarget[idx+2] - pos.array[idx+2]) * morphSpeed;
+
+        // Color Morph
+        if (currentTargetCol) {
+            col.array[idx] += (currentTargetCol[idx] - col.array[idx]) * 0.1;
+            col.array[idx+1] += (currentTargetCol[idx+1] - col.array[idx+1]) * 0.1;
+            col.array[idx+2] += (currentTargetCol[idx+2] - col.array[idx+2]) * 0.1;
+        } else {
+            col.array[idx] += (targetBaseColor.r - col.array[idx]) * 0.1;
+            col.array[idx+1] += (targetBaseColor.g - col.array[idx+1]) * 0.1;
+            col.array[idx+2] += (targetBaseColor.b - col.array[idx+2]) * 0.1;
+        }
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+    
+    // Slow Background Rotation
+    points.rotation.y += 0.002;
+    points.rotation.x = Math.sin(elapsedTime * 0.2) * 0.1; // Subtle wobble
+
+    // Render with Post-Processing
+    composer.render();
+}
+animate();
+
+// Handle Window Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
